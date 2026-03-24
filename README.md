@@ -27,7 +27,7 @@
   - [Batch Queries](#batch-queries)
   - [Extract Accessibility Tree](#extract-accessibility-tree)
 - [License](#license)
-- [Citation](#citation)
+- [TODO](#todo)
 
 ---
 
