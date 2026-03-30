@@ -98,7 +98,6 @@ class HFActionPredictor:
         from transformers import AutoProcessor, AutoModelForImageTextToText
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.dtype = torch.bfloat16
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self.top_p = top_p
