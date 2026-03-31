@@ -122,9 +122,10 @@ class HFActionPredictor:
         ]}]
         pil_images, _, _ = process_vision_info(messages)
         text_input = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = self.processor(images=pil_images, text=text_input, padding=True, return_tensors="pt").to(self.device)
-        # Remove token_type_ids: HF uses it to enable bidirectional attention for image tokens; molmoweb is trained with causal attention only
-        inputs = {k: v for k, v in inputs.items() if k != "token_type_ids"}
+        # return_mm_token_type_ids=False: HF uses token_type_ids to enable bidirectional attention
+        # for image tokens, but molmoweb is trained with pure causal attention.
+        inputs = self.processor(images=pil_images, text=text_input, padding=True, return_tensors="pt",
+                                return_mm_token_type_ids=False).to(self.device)
         prompt = self.processor.decode(inputs["input_ids"][0], skip_special_tokens=True)
         sample = self.top_p is not None
         with torch.no_grad():
