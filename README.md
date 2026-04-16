@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="MolmoWeb Tester" width="100%">
+  <img src="assets/logo.png" alt="MolmoWeb GUI Ver.S" width="100%">
 </p>
 
 <p align="center">
@@ -14,14 +14,14 @@
 
 ---
 
-**MolmoWeb Tester** is a local control panel for [MolmoWeb](https://github.com/allenai/molmoweb). It adds a browser-based GUI on top of the model server so you can send tasks, watch the current run, inspect execution steps, and review history from your own machine.
+**MolmoWeb GUI Ver.S** is a local control panel for [MolmoWeb](https://github.com/allenai/molmoweb). It adds a browser-based GUI on top of the model server so you can send tasks, watch the current run, inspect execution steps, and review history from your own machine.
 
 This repository is currently focused on **macOS**, especially **Apple Silicon Macs**. The model server has been adjusted to prefer `mps` and fall back to CPU when needed.
 
 ## Preview
 
 <p align="center">
-  <img src="assets/gui-screenshot.png" alt="MolmoWeb Tester UI" width="100%">
+  <img src="assets/gui-screenshot.png" alt="MolmoWeb GUI Ver.S UI" width="100%">
 </p>
 
 ## Highlights
@@ -79,3 +79,13 @@ http://127.0.0.1:8010/?lang=ja
 ## Acknowledgements
 
 This project is based on [allenai/molmoweb](https://github.com/allenai/molmoweb), with additional work for macOS compatibility and a local tester GUI.
+
+## Support
+
+If you find this project useful, consider supporting the development:
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/sawac" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" >
+  </a>
+</p>
