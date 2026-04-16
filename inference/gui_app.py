@@ -35,7 +35,15 @@ LANGS = {"en", "ja"}
 TEXT = {
     "en": {
         "title": "MolmoWeb Tester",
-        "subtitle": "This panel lets you test MolmoWeb on this Mac. Enter a task on the left, adjust the step limit and window size if needed, and start the run. The right side shows the current run and each execution step, and past runs are available from History. Leave the model server running at",
+        "subtitle": "unused",
+        "help_heading": "How to use",
+        "help_steps": [
+            ("1.", "Enter a task", "Type what you want the browser to do."),
+            ("2.", "Adjust settings", "Set the step limit and window size if needed."),
+            ("3.", "Run", 'Press "Run task" — the right pane shows live progress.'),
+            ("4.", "Review", "Check past results from the History panel."),
+        ],
+        "help_note": "Keep the model server running at",
         "help_button": "?",
         "browser_session": "Browser Session",
         "headless": "Headless",
@@ -51,6 +59,7 @@ TEXT = {
         "run_task": "Run task",
         "running": "Running",
         "reset": "Reset browser session",
+        "force_stop": "Force stop",
         "history": "Run History",
         "history_toggle": "History",
         "history_close": "Close",
@@ -68,8 +77,12 @@ TEXT = {
         "completed": "completed",
         "answered": "answered",
         "incomplete": "incomplete",
+        "stopped": "stopped",
         "current_run": "Current Run",
+        "current_page": "Current page",
+        "page_title": "Page title",
         "live_trace": "Execution Steps",
+        "expand_all": "Expand all",
         "idle": "Idle",
         "current_action": "Current action",
         "current_url": "Current URL",
@@ -80,7 +93,15 @@ TEXT = {
     },
     "ja": {
         "title": "MolmoWeb Tester",
-        "subtitle": "この画面は MolmoWeb のテスト用パネルです。左側でタスク、最大ステップ数、ウィンドウサイズを指定して実行できます。右側には現在の実行状況と各ステップが表示され、過去の実行結果は［履歴］から確認できます。MolmoWeb はこの Mac 上で別ウィンドウの Chromium を操作するため、モデルサーバーは次の URL で起動したままにしてください",
+        "subtitle": "unused",
+        "help_heading": "使い方",
+        "help_steps": [
+            ("1.", "タスクを入力", "ブラウザにやらせたい操作を書きます。"),
+            ("2.", "設定を調整", "必要に応じてステップ数やウィンドウサイズを変更します。"),
+            ("3.", "実行", "「タスクを実行」を押すと、右側にリアルタイムで進捗が表示されます。"),
+            ("4.", "結果を確認", "過去の実行結果は「履歴」パネルから確認できます。"),
+        ],
+        "help_note": "モデルサーバーを起動したままにしてください :",
         "help_button": "？",
         "browser_session": "ブラウザセッション",
         "headless": "ヘッドレス",
@@ -96,6 +117,7 @@ TEXT = {
         "run_task": "タスクを実行",
         "running": "実行中",
         "reset": "セッションをリセット",
+        "force_stop": "強制停止",
         "history": "実行履歴",
         "history_toggle": "履歴",
         "history_close": "閉じる",
@@ -113,8 +135,12 @@ TEXT = {
         "completed": "完了",
         "answered": "回答済み",
         "incomplete": "未完了",
+        "stopped": "停止",
         "current_run": "現在の実行",
+        "current_page": "現在のページ",
+        "page_title": "ページタイトル",
         "live_trace": "実行ステップ",
+        "expand_all": "すべて展開",
         "idle": "待機中",
         "current_action": "現在のアクション",
         "current_url": "現在の URL",
@@ -174,6 +200,7 @@ class AppState:
     live_run: LiveRun = field(default_factory=LiveRun)
     worker: threading.Thread | None = None
     task_queue: queue.Queue[tuple[str, int] | None] = field(default_factory=queue.Queue)
+    stop_requested: bool = False
 
     def get_client(self) -> MolmoWeb:
         if self.client is None:
@@ -198,7 +225,20 @@ class AppState:
             self.client.close()
             self.client = None
         self.last_error = None
+        self.stop_requested = False
         self.live_run = LiveRun()
+
+    def force_stop(self) -> None:
+        self.stop_requested = True
+        if self.client is not None:
+            self.client.close()
+            self.client = None
+        self.last_error = None
+        self.live_run.running = False
+        self.live_run.status = "stopped"
+        self.live_run.error = None
+        self.live_run.answer = "Force stopped"
+        self.live_run.finished_at = datetime.now().strftime("%H:%M:%S")
 
     def update_live_run(self, event: dict) -> None:
         with self.lock:
@@ -297,7 +337,7 @@ def _truncate_text(text: str | None, max_chars: int = 140) -> str:
 
 
 def _render_record(record: RunRecord, lang: str) -> str:
-    status = _t(lang, record.status) if record.status in {"completed", "answered", "incomplete"} else record.status
+    status = _t(lang, record.status) if record.status in {"completed", "answered", "incomplete", "stopped"} else record.status
     detail_bits = [
         f"{escape(_t(lang, 'steps'))}: {record.step_count}",
         f"max_steps: {record.max_steps}",
@@ -316,18 +356,18 @@ def _render_record(record: RunRecord, lang: str) -> str:
     full_prompt = escape(record.prompt)
     full_answer = escape(record.answer)
     return f"""
-    <article class="record">
+    <article class="record" onclick="this.classList.toggle('expanded')">
       <div class="record-header">
-        <span>{escape(record.created_at)}</span>
-        <span>{escape(status)}</span>
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        <div class="record-meta">
+          <span>{escape(record.created_at)}</span>
+          <span>{escape(status)}</span>
+        </div>
+        <button class="delete-btn" type="button" data-record-id="{escape(record.id)}" title="{escape(_t(lang, 'delete'))}">&#x1F5D1;&#xFE0E;</button>
       </div>
-      <p class="record-copy"><strong>{escape(_t(lang, "prompt"))}</strong><br><span title="{full_prompt}">{prompt_preview}</span></p>
-      <p class="answer"><strong>{escape(_t(lang, "answer"))}</strong><br><span title="{full_answer}">{answer_preview}</span></p>
+      <p class="record-copy"><strong>{escape(_t(lang, "prompt"))}</strong><br><span class="preview">{prompt_preview}</span><span class="full" hidden>{full_prompt}</span></p>
+      <p class="answer"><strong>{escape(_t(lang, "answer"))}</strong><br><span class="preview">{answer_preview}</span><span class="full" hidden>{full_answer}</span></p>
       <p class="meta-line">{' | '.join(detail_bits)}</p>
-      <form class="delete-form" data-record-id="{escape(record.id)}">
-        <input type="hidden" name="lang" value="{lang}">
-        <button class="secondary delete-button" type="submit">{escape(_t(lang, "delete"))}</button>
-      </form>
       {error_html}
     </article>
     """
@@ -338,22 +378,52 @@ def _status_payload(lang: str) -> dict:
     live["browser_status"] = _t(lang, "ready") if STATE.client is not None else _t(lang, "not_started")
     live["localized_status"] = (
         _t(lang, live["status"])
-        if live["status"] in {"completed", "answered", "incomplete"}
+        if live["status"] in {"completed", "answered", "incomplete", "stopped"}
         else (_t(lang, "running") if live["running"] else _t(lang, "idle"))
     )
     live["history_html"] = "".join(_render_record(record, lang) for record in reversed(STATE.history)) or (
         f'<p class="hint">{escape(_t(lang, "no_runs"))}</p>'
     )
     live["trace_html"] = "".join(
-        _render_trace_item(item) for item in live["steps_log"]
+        _render_trace_item(item, idx) for idx, item in enumerate(live["steps_log"])
     ) or f'<p class="hint">{escape(_t(lang, "idle"))}</p>'
     live["last_error"] = STATE.last_error
+    # Latest step content for the "current step" panel
+    steps = live["steps_log"]
+    if len(steps) >= 2:
+        latest = steps[-1]
+        live["latest_step_html"] = _render_latest_step(latest)
+    elif len(steps) == 1:
+        live["latest_step_html"] = f'<p class="hint">{escape(_t(lang, "idle"))}</p>'
+    else:
+        live["latest_step_html"] = f'<p class="hint">-</p>'
     return live
 
 
-def _render_trace_item(item: dict[str, str]) -> str:
-    img_html = ""
+def _render_latest_step(item: dict[str, str]) -> str:
+    parts = []
+    summary = item.get("summary", "")
+    if summary:
+        parts.append(f'<div class="latest-action">{escape(summary)}</div>')
+    meta = []
+    if item.get("page_title"):
+        meta.append(f'title: {escape(item["page_title"])}')
+    if item.get("page_url"):
+        meta.append(f'url: {escape(item["page_url"])}')
+    if meta:
+        parts.append(f'<div class="trace-meta">{" | ".join(meta)}</div>')
     if item.get("screenshot_base64"):
+        parts.append(
+            f'<img class="trace-shot" alt="step screenshot" '
+            f'src="data:image/png;base64,{item["screenshot_base64"]}">'
+        )
+    return "".join(parts)
+
+
+def _render_trace_item(item: dict[str, str], idx: int = 0) -> str:
+    is_first = idx == 0
+    img_html = ""
+    if not is_first and item.get("screenshot_base64"):
         img_html = (
             f'<img class="trace-shot" alt="step screenshot" '
             f'src="data:image/png;base64,{item["screenshot_base64"]}">'
@@ -361,11 +431,12 @@ def _render_trace_item(item: dict[str, str]) -> str:
     meta = []
     if item.get("page_title"):
         meta.append(f'title: {escape(item["page_title"])}')
-    if item.get("page_url"):
+    if not is_first and item.get("page_url"):
         meta.append(f'url: {escape(item["page_url"])}')
     meta_html = f'<div class="trace-meta">{" | ".join(meta)}</div>' if meta else ""
+    open_attr = "" if is_first else " open"
     return (
-        "<details class=\"trace-item\">"
+        f"<details class=\"trace-item\"{open_attr}>"
         f"<summary>{escape(item.get('summary', ''))}</summary>"
         f"{meta_html}"
         f"{img_html}"
@@ -375,6 +446,8 @@ def _render_trace_item(item: dict[str, str]) -> str:
 
 def _finalize_run(prompt: str, max_steps: int, traj: Trajectory) -> None:
     answer, status = _extract_answer(traj)
+    if STATE.stop_requested:
+        answer, status = "Force stopped", "stopped"
     href = _save_trajectory(traj, prompt)
     last_state = traj.steps[-1].state if traj.steps else None
     error = next((step.error for step in reversed(traj.steps) if step.error), None)
@@ -401,10 +474,10 @@ def _finalize_run(prompt: str, max_steps: int, traj: Trajectory) -> None:
         STATE.live_run.status = status
         STATE.live_run.finished_at = datetime.now().strftime("%H:%M:%S")
         STATE.live_run.trajectory_href = href
+        STATE.stop_requested = False
 
 
 def _worker_loop() -> None:
-    client = STATE.get_client()
     while True:
         item = STATE.task_queue.get()
         if item is None:
@@ -412,11 +485,21 @@ def _worker_loop() -> None:
         prompt, max_steps = item
         with STATE.lock:
             STATE.last_error = None
+        client = STATE.get_client()
         try:
             traj = client.run(query=prompt, max_steps=max_steps)
             _finalize_run(prompt, max_steps, traj)
         except Exception as exc:
             with STATE.lock:
+                if STATE.stop_requested:
+                    STATE.last_error = None
+                    STATE.live_run.running = False
+                    STATE.live_run.error = None
+                    STATE.live_run.status = "stopped"
+                    STATE.live_run.answer = "Force stopped"
+                    STATE.live_run.finished_at = datetime.now().strftime("%H:%M:%S")
+                    STATE.stop_requested = False
+                    continue
                 STATE.last_error = str(exc)
                 STATE.live_run.running = False
                 STATE.live_run.error = str(exc)
@@ -521,19 +604,70 @@ def _render_page(lang: str = "en") -> HTMLResponse:
       position: absolute;
       top: calc(100% + 10px);
       right: 0;
-      width: min(420px, calc(100vw - 32px));
-      padding: 16px 18px;
+      width: min(460px, calc(100vw - 32px));
+      padding: 20px 22px;
       border-radius: 16px;
       border: 1px solid var(--line);
-      background: rgba(255,255,255,0.96);
-      box-shadow: 0 18px 40px rgba(30, 36, 48, 0.12);
+      background: rgba(255,255,255,0.97);
+      box-shadow: 0 18px 40px rgba(30, 36, 48, 0.13);
       color: var(--ink);
-      font: 500 1rem/1.65 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
-      display: none;
+      font: 500 0.92rem/1.6 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
       z-index: 30;
+      opacity: 0;
+      transform: translateY(-6px);
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
     }}
     .help-popover.open {{
-      display: block;
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }}
+    .help-heading {{
+      margin: 0 0 12px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }}
+    .help-steps {{
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+    }}
+    .help-step {{
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }}
+    .help-step dt {{
+      font-weight: 600;
+      font-size: 0.92rem;
+    }}
+    .help-step .step-num {{
+      color: var(--accent);
+      font-weight: 700;
+      margin-right: 2px;
+    }}
+    .help-step dd {{
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.5;
+      padding-left: 1.2em;
+    }}
+    .help-note {{
+      margin: 14px 0 0;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      font-size: 0.84rem;
+      color: var(--muted);
+    }}
+    .help-note code {{
+      font-size: 0.82rem;
+      background: rgba(0,0,0,0.04);
+      padding: 2px 6px;
+      border-radius: 4px;
     }}
     .lang-switch {{
       display: inline-flex;
@@ -709,6 +843,208 @@ def _render_page(lang: str = "en") -> HTMLResponse:
       margin-bottom: 14px;
       font: 700 1rem/1.2 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
     }}
+    .toggle-switch {{
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }}
+    .toggle-switch input {{
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }}
+    .toggle-slider {{
+      position: absolute;
+      inset: 0;
+      background: #ccc;
+      border-radius: 20px;
+      transition: background 0.2s;
+    }}
+    .toggle-slider::before {{
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 2px;
+      bottom: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }}
+    .toggle-switch input:checked + .toggle-slider {{
+      background: var(--accent);
+    }}
+    .toggle-switch input:checked + .toggle-slider::before {{
+      transform: translateX(16px);
+    }}
+    .toggle-switch-inline {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }}
+    .toggle-switch-inline input {{
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }}
+    .toggle-switch-inline .toggle-slider {{
+      position: relative;
+      display: flex;
+      align-items: center;
+      width: 36px;
+      height: 20px;
+      background: #ccc;
+      border-radius: 20px;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }}
+    .toggle-switch-inline .toggle-slider::before {{
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 2px;
+      bottom: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }}
+    .toggle-switch-inline input:checked + .toggle-slider {{
+      background: var(--accent);
+    }}
+    .toggle-switch-inline input:checked + .toggle-slider::before {{
+      transform: translateX(16px);
+    }}
+    .toggle-label {{
+      font: 500 0.82rem/1.2 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
+      color: var(--muted);
+      line-height: 20px;
+    }}
+    .live-head-actions {{
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }}
+    .live-run-card {{
+      border-radius: 18px;
+      overflow: hidden;
+    }}
+    .progress-bar {{
+      display: flex;
+      gap: 3px;
+      padding: 0 16px 8px;
+      height: 10px;
+    }}
+    .progress-bar:empty {{
+      display: none;
+    }}
+    .progress-seg {{
+      flex: 1;
+      border-radius: 5px;
+      background: rgba(0,0,0,0.07);
+      transition: background 0.4s ease;
+      position: relative;
+      overflow: hidden;
+    }}
+    .progress-seg.filled {{
+      background: var(--accent);
+    }}
+    .progress-seg.active {{
+      background: color-mix(in srgb, var(--accent) 70%, #4ade80);
+      animation: seg-pulse 1.2s ease-in-out infinite;
+    }}
+    .progress-seg.active::after {{
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.45) 50%, transparent 100%);
+      animation: seg-shimmer 1.4s ease-in-out infinite;
+    }}
+    .progress-seg.done {{
+      background: var(--accent);
+    }}
+    @keyframes seg-pulse {{
+      0%, 100% {{ opacity: 1; }}
+      50% {{ opacity: 0.75; }}
+    }}
+    @keyframes seg-shimmer {{
+      0% {{ transform: translateX(-100%); }}
+      100% {{ transform: translateX(100%); }}
+    }}
+    .live-run-card summary {{
+      list-style: none;
+      cursor: pointer;
+    }}
+    .live-run-card summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .live-run-body {{
+      display: grid;
+      gap: 12px;
+      padding-top: 6px;
+    }}
+    .run-row {{
+      min-width: 0;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.78);
+      border: 1px solid rgba(30, 36, 48, 0.08);
+    }}
+    .run-row strong {{
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font: 700 0.82rem/1.2 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }}
+    .latest-step-details {{
+      padding: 10px 16px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.78);
+      border: 1px solid rgba(30, 36, 48, 0.08);
+    }}
+    .latest-step-details summary {{
+      cursor: pointer;
+      color: var(--muted);
+      font: 700 0.82rem/1.2 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .latest-step-details summary::before {{
+      content: "▸";
+      font-size: 0.75rem;
+      transition: transform 0.2s;
+    }}
+    .latest-step-details[open] summary::before {{
+      transform: rotate(90deg);
+    }}
+    .latest-step-details summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .latest-step-content {{
+      margin-top: 8px;
+    }}
+    .latest-action {{
+      font: 500 0.9rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      word-break: break-word;
+      margin-bottom: 6px;
+    }}
+    .latest-step-content .trace-meta {{
+      padding: 0 0 6px;
+    }}
+    .latest-step-content .trace-shot {{
+      padding: 6px 0 0;
+    }}
     .badge {{
       display: inline-flex;
       align-items: center;
@@ -727,33 +1063,11 @@ def _render_page(lang: str = "en") -> HTMLResponse:
       box-shadow: 0 0 0 0 currentColor;
       animation: pulse 1.4s infinite;
     }}
-    .live-grid {{
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-    }}
-    .live-grid div {{
-      min-width: 0;
-      padding: 14px 16px;
-      border-radius: 16px;
-      background: rgba(255,255,255,0.72);
-      border: 1px solid rgba(30, 36, 48, 0.08);
-    }}
-    .live-grid strong {{
-      display: block;
-      margin-bottom: 8px;
-      color: var(--muted);
-      font: 700 0.82rem/1.2 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }}
     .mono {{
       font: 500 1rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
       word-break: break-word;
     }}
     .trace-panel {{
-      max-height: 52vh;
-      overflow: auto;
     }}
     .trace-list {{
       display: grid;
@@ -840,22 +1154,61 @@ def _render_page(lang: str = "en") -> HTMLResponse:
     }}
     .record {{
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 16px;
+      border-radius: 14px;
+      padding: 12px 14px;
       background: rgba(255,255,255,0.88);
-      min-height: 230px;
       display: grid;
-      grid-template-rows: auto auto auto 1fr auto auto;
-      gap: 10px;
+      gap: 6px;
+      cursor: pointer;
+      transition: box-shadow 0.18s ease, border-color 0.18s ease;
+      position: relative;
+    }}
+    .record:hover {{
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      border-color: var(--accent);
+    }}
+    .record .chevron {{
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      transition: transform 0.25s ease;
+      color: var(--muted);
+      flex-shrink: 0;
+    }}
+    .record.expanded .chevron {{
+      transform: rotate(180deg);
     }}
     .record-header {{
       display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      font: 600 0.9rem/1.2 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
+      align-items: center;
+      gap: 8px;
+      font: 600 0.82rem/1.2 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
       color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.03em;
+    }}
+    .record-header .record-meta {{
+      flex: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }}
+    .record-header .delete-btn {{
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 2px 4px;
+      font-size: 1rem;
+      line-height: 1;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+    }}
+    .record-header .delete-btn:hover {{
+      color: #dc2626;
+      background: rgba(220,38,38,0.08);
     }}
     .record p {{
       margin: 0;
@@ -863,29 +1216,42 @@ def _render_page(lang: str = "en") -> HTMLResponse:
       word-break: break-word;
     }}
     .record-copy {{
-      min-height: 64px;
-      font-size: 1rem;
-      line-height: 1.55;
+      font-size: 0.92rem;
+      line-height: 1.45;
+      max-height: 2.9em;
+      overflow: hidden;
+      transition: max-height 0.25s ease;
+    }}
+    .record.expanded .record-copy {{
+      max-height: none;
     }}
     .record .answer {{
-      font: 600 1.08rem/1.55 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
-      min-height: 88px;
-      max-height: 88px;
+      font: 600 0.95rem/1.45 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
+      max-height: 2.9em;
       overflow: hidden;
+      transition: max-height 0.25s ease;
+    }}
+    .record.expanded .answer {{
+      max-height: none;
     }}
     .record .meta-line {{
       color: var(--muted);
-      font: 500 0.96rem/1.5 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
-      min-height: 46px;
-      max-height: 46px;
+      font: 500 0.82rem/1.4 "Avenir Next", "Hiragino Sans", "Yu Gothic", sans-serif;
+      max-height: 1.4em;
       overflow: hidden;
+      transition: max-height 0.25s ease;
     }}
-    .delete-form {{
-      margin-top: auto;
+    .record.expanded .meta-line {{
+      max-height: none;
     }}
-    .delete-button {{
-      padding: 10px 16px;
-      font-size: 0.92rem;
+    .record.expanded .preview {{
+      display: none;
+    }}
+    .record.expanded .full {{
+      display: inline !important;
+    }}
+    .record .full {{
+      display: none;
     }}
     a {{ color: var(--accent); }}
     @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
@@ -907,7 +1273,6 @@ def _render_page(lang: str = "en") -> HTMLResponse:
         flex: 1;
         text-align: center;
       }}
-      .live-grid {{ grid-template-columns: 1fr; }}
       .field-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
@@ -923,7 +1288,13 @@ def _render_page(lang: str = "en") -> HTMLResponse:
         <div class="top-actions">
           <div class="help-wrap">
             <button id="help-toggle" class="secondary help-button" type="button">{escape(_t(lang, "help_button"))}</button>
-            <div id="help-popover" class="help-popover">{escape(_t(lang, "subtitle"))} <code>{escape(STATE.endpoint)}</code></div>
+            <div id="help-popover" class="help-popover">
+              <h3 class="help-heading">{escape(_t(lang, "help_heading"))}</h3>
+              <dl class="help-steps">
+                {"".join(f'<div class="help-step"><dt><span class="step-num">{escape(num)}</span> {escape(title)}</dt><dd>{escape(desc)}</dd></div>' for num, title, desc in _t(lang, "help_steps"))}
+              </dl>
+              <p class="help-note">{escape(_t(lang, "help_note"))} <code>{escape(STATE.endpoint)}</code></p>
+            </div>
           </div>
           <button id="history-toggle" class="secondary" type="button">{escape(_t(lang, "history_toggle"))}</button>
           <nav class="lang-switch" aria-label="Language switcher">
@@ -943,7 +1314,6 @@ def _render_page(lang: str = "en") -> HTMLResponse:
           <input type="hidden" name="lang" value="{lang}">
           <label for="prompt">{escape(_t(lang, "task"))}</label>
           <textarea id="prompt" name="prompt" placeholder="{escape(_t(lang, "task_placeholder"))}"></textarea>
-          <div class="field-grid-head">{escape(_t(lang, "window_size"))}</div>
           <div class="field-grid">
             <div>
               <label for="max_steps">{escape(_t(lang, "max_steps"))}</label>
@@ -964,40 +1334,39 @@ def _render_page(lang: str = "en") -> HTMLResponse:
               <span id="run-button-label">{escape(_t(lang, "run_task"))}</span>
             </button>
             <button id="reset-button" class="secondary" type="button">{escape(_t(lang, "reset"))}</button>
+            <button id="stop-button" class="secondary" type="button" disabled>{escape(_t(lang, "force_stop"))}</button>
           </div>
         </form>
         <p id="notice" class="notice" style="display:none;"></p>
         <p id="error" class="error" style="display:none;"></p>
       </div>
       <div class="side-stack">
-        <div class="panel live-run">
-          <div class="live-head">
+        <details class="panel live-run live-run-card" open>
+          <summary class="live-head">
             <span>{escape(_t(lang, "current_run"))}</span>
             <span class="badge"><span class="pulse"></span><span id="live-status">{escape(_t(lang, "idle"))}</span></span>
+          </summary>
+          <div class="progress-bar" id="progress-bar"></div>
+          <div class="live-run-body">
+            <div class="run-row">
+              <strong>{escape(_t(lang, "page_title"))}</strong>
+              <div id="live-page-title">{escape(data["page_title"] or "-")}</div>
+            </div>
+            <details class="latest-step-details" open>
+              <summary>{escape(_t(lang, "current_step"))}</summary>
+              <div class="latest-step-content" id="latest-step">{data["latest_step_html"]}</div>
+            </details>
           </div>
-          <div class="live-grid">
-            <div>
-              <strong>{escape(_t(lang, "prompt"))}</strong>
-              <div id="live-prompt">{escape(data["prompt"] or "-")}</div>
-            </div>
-            <div>
-              <strong>{escape(_t(lang, "current_step"))}</strong>
-              <div id="live-step">{current_step}</div>
-            </div>
-            <div>
-              <strong>{escape(_t(lang, "current_action"))}</strong>
-              <div class="mono" id="live-action">{escape(data["action"] or "-")}</div>
-            </div>
-            <div>
-              <strong>{escape(_t(lang, "current_url"))}</strong>
-              <div class="mono" id="live-url">{escape(data["page_url"] or "-")}</div>
-            </div>
-          </div>
-        </div>
+        </details>
         <div class="panel trace-panel">
           <div class="live-head">
             <span>{escape(_t(lang, "live_trace"))}</span>
-            <span class="badge"><span id="live-step-badge">{current_step}</span></span>
+            <label class="toggle-switch-inline">
+              <span class="toggle-label">{escape(_t(lang, "expand_all"))}</span>
+              <input type="checkbox" id="trace-toggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="badge" style="margin-left:auto;"><span id="live-step-badge">{current_step}</span></span>
           </div>
           <div class="trace-list" id="trace-list">{data["trace_html"]}</div>
         </div>
@@ -1022,6 +1391,7 @@ def _render_page(lang: str = "en") -> HTMLResponse:
     const text = {{
       runTask: {_t(lang, "run_task")!r},
       running: {_t(lang, "running")!r},
+      forceStop: {_t(lang, "force_stop")!r},
       taskFinished: {_t(lang, "task_finished")!r},
       taskFailed: {_t(lang, "task_failed")!r},
       enterTask: {_t(lang, "enter_task")!r},
@@ -1032,6 +1402,7 @@ def _render_page(lang: str = "en") -> HTMLResponse:
     const runButton = document.getElementById("run-button");
     const runButtonLabel = document.getElementById("run-button-label");
     const resetButton = document.getElementById("reset-button");
+    const stopButton = document.getElementById("stop-button");
     const historyToggle = document.getElementById("history-toggle");
     const helpToggle = document.getElementById("help-toggle");
     const helpPopover = document.getElementById("help-popover");
@@ -1041,7 +1412,16 @@ def _render_page(lang: str = "en") -> HTMLResponse:
     const historyBackdrop = document.getElementById("history-backdrop");
     const notice = document.getElementById("notice");
     const error = document.getElementById("error");
+    const traceToggle = document.getElementById("trace-toggle");
     let pollTimer = null;
+
+    function applyTraceToggle() {{
+      const open = traceToggle.checked;
+      document.querySelectorAll(".trace-item").forEach(el => {{
+        el.open = open;
+      }});
+    }}
+    traceToggle.addEventListener("change", applyTraceToggle);
 
     function setDrawer(open) {{
       historyDrawer.classList.toggle("open", open);
@@ -1056,6 +1436,7 @@ def _render_page(lang: str = "en") -> HTMLResponse:
     function setRunningUI(isRunning) {{
       runButton.disabled = isRunning;
       resetButton.disabled = isRunning;
+      stopButton.disabled = !isRunning;
       runButton.classList.toggle("is-running", isRunning);
       runButtonLabel.textContent = isRunning ? text.running : text.runTask;
     }}
@@ -1070,17 +1451,48 @@ def _render_page(lang: str = "en") -> HTMLResponse:
       target.textContent = value;
     }}
 
+    function updateProgressBar(data) {{
+      const bar = document.getElementById("progress-bar");
+      const maxSteps = data.max_steps || 0;
+      const stepNum = data.step_num || 0;
+      const isRunning = Boolean(data.running);
+      const isDone = !isRunning && data.status !== "idle";
+      if (!maxSteps) {{
+        bar.innerHTML = "";
+        return;
+      }}
+      // Build segments if count changed
+      if (bar.children.length !== maxSteps) {{
+        bar.innerHTML = Array.from({{length: maxSteps}}, () => '<div class="progress-seg"></div>').join("");
+      }}
+      const segs = bar.children;
+      for (let i = 0; i < maxSteps; i++) {{
+        if (isDone) {{
+          segs[i].className = "progress-seg done";
+        }} else if (i < stepNum - 1) {{
+          segs[i].className = "progress-seg filled";
+        }} else if (i === stepNum - 1 && isRunning) {{
+          segs[i].className = "progress-seg active";
+        }} else if (i < stepNum) {{
+          segs[i].className = "progress-seg filled";
+        }} else {{
+          segs[i].className = "progress-seg";
+        }}
+      }}
+    }}
+
     function updateLive(data) {{
       document.getElementById("browser-status").textContent = data.browser_status;
       document.getElementById("live-status").textContent = data.localized_status;
-      document.getElementById("live-prompt").textContent = data.prompt || "-";
-      document.getElementById("live-action").textContent = data.action || "-";
-      document.getElementById("live-url").textContent = data.page_url || "-";
+      document.getElementById("live-page-title").textContent = data.page_title || "-";
+      document.getElementById("latest-step").innerHTML = data.latest_step_html || "-";
       document.getElementById("trace-list").innerHTML = data.trace_html;
+      applyTraceToggle();
       document.getElementById("history").innerHTML = data.history_html;
+      attachRecordListeners();
       const step = data.step_num ? `${{data.step_num}}/${{data.max_steps}}` : (data.running ? text.queued : "-");
-      document.getElementById("live-step").textContent = step;
       document.getElementById("live-step-badge").textContent = step;
+      updateProgressBar(data);
       setRunningUI(Boolean(data.running));
       setMessage(error, data.last_error || data.error || "");
       if (!data.running && data.status !== "idle") {{
@@ -1145,11 +1557,9 @@ def _render_page(lang: str = "en") -> HTMLResponse:
         return;
       }}
       setRunningUI(true);
-      document.getElementById("live-prompt").textContent = prompt;
-      document.getElementById("live-step").textContent = text.queued;
       document.getElementById("live-step-badge").textContent = text.queued;
-      document.getElementById("live-action").textContent = "-";
-      document.getElementById("live-url").textContent = "-";
+      document.getElementById("live-page-title").textContent = "-";
+      document.getElementById("latest-step").innerHTML = "-";
       document.getElementById("trace-list").innerHTML = `<p class="hint">${{text.queued}}</p>`;
       document.getElementById("live-status").textContent = text.running;
       const formData = new FormData(form);
@@ -1168,6 +1578,14 @@ def _render_page(lang: str = "en") -> HTMLResponse:
       updateLive(data);
       if (pollTimer) window.clearInterval(pollTimer);
       pollTimer = window.setInterval(fetchStatus, 1000);
+    }});
+
+    // Persist prompt across language switches
+    const promptEl = document.getElementById("prompt");
+    const saved = sessionStorage.getItem("molmoweb_prompt");
+    if (saved) promptEl.value = saved;
+    promptEl.addEventListener("input", () => {{
+      sessionStorage.setItem("molmoweb_prompt", promptEl.value);
     }});
 
     fetchStatus();
@@ -1200,12 +1618,32 @@ def _render_page(lang: str = "en") -> HTMLResponse:
       }}
       await fetchStatus();
     }});
-    document.addEventListener("submit", async (event) => {{
-      const formEl = event.target;
-      if (!(formEl instanceof HTMLFormElement) || !formEl.classList.contains("delete-form")) return;
-      event.preventDefault();
-      await deleteHistoryRecord(formEl.dataset.recordId);
+    stopButton.addEventListener("click", async () => {{
+      if (stopButton.disabled) return;
+      setMessage(notice, "");
+      setMessage(error, "");
+      const formData = new FormData();
+      formData.append("lang", lang);
+      const response = await fetch("/api/stop", {{
+        method: "POST",
+        body: formData,
+      }});
+      const data = await response.json();
+      updateLive(data);
     }});
+    // Handle delete buttons and prevent card toggle
+    function attachRecordListeners() {{
+      document.querySelectorAll(".record .delete-btn").forEach(btn => {{
+        btn.onclick = async (e) => {{
+          e.stopPropagation();
+          await deleteHistoryRecord(btn.dataset.recordId);
+        }};
+      }});
+      document.querySelectorAll(".record a").forEach(el => {{
+        el.addEventListener("click", (e) => e.stopPropagation());
+      }});
+    }}
+    attachRecordListeners();
   </script>
 </body>
 </html>"""
@@ -1250,6 +1688,7 @@ def api_run(
                 STATE.client.close()
                 STATE.client = None
         STATE.last_error = None
+        STATE.stop_requested = False
         STATE.live_run = LiveRun(
             running=True,
             prompt=prompt,
@@ -1269,6 +1708,16 @@ def reset(lang: str = Form("en")) -> RedirectResponse:
         if not STATE.live_run.running:
             STATE.reset_browser()
     return RedirectResponse(f"/?lang={_lang_value(lang)}", status_code=303)
+
+
+@app.post("/api/stop")
+def api_stop(lang: str = Form("en")) -> JSONResponse:
+    lang = _lang_value(lang)
+    with STATE.lock:
+        if not STATE.live_run.running:
+            return JSONResponse(_status_payload(lang))
+        STATE.force_stop()
+        return JSONResponse(_status_payload(lang))
 
 
 @app.post("/api/history/{record_id}/delete")
