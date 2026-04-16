@@ -1,4 +1,4 @@
-# MolmoWeb Tester
+# MolmoWeb GUI Ver.S
 
 Local testing GUI for MolmoWeb on macOS.
 
@@ -13,10 +13,11 @@ Local testing GUI for MolmoWeb on macOS.
 - [Using the GUI](#using-the-gui)
 - [Project Layout](#project-layout)
 - [Notes](#notes)
+- [Support](#support)
 
 ## Overview
 
-MolmoWeb Tester adds a local browser UI on top of MolmoWeb so you can:
+MolmoWeb GUI Ver.S adds a local browser UI on top of MolmoWeb so you can:
 
 - send natural-language tasks
 - monitor the current run
@@ -34,6 +35,8 @@ This repository is currently tuned for macOS, especially Apple Silicon Macs.
 - Japanese / English UI switcher
 - Custom browser width and height
 - `mps` and CPU fallback for non-CUDA Macs
+- Force stop button
+- Progress bar for run progress
 
 ## Platform
 
@@ -92,6 +95,7 @@ http://127.0.0.1:8010/?lang=ja
 5. Watch the right-side panels for live status and execution steps.
 6. Open `History` to review past runs.
 7. Use `Reset browser session` when you want a fresh Chromium window.
+8. Use `Force stop` to interrupt a running task.
 
 ## Project Layout
 
@@ -100,7 +104,15 @@ http://127.0.0.1:8010/?lang=ja
 - `inference/client.py`
   MolmoWeb client and browser session handling
 - `inference/gui_app.py`
-  Local tester GUI
+  Local tester GUI (FastAPI + Jinja2)
+- `inference/templates/gui.html`
+  GUI HTML template
+- `inference/static/css/gui.css`
+  GUI stylesheet
+- `inference/static/js/gui.js`
+  GUI JavaScript
+- `inference/texts.json`
+  Multilingual text definitions (Japanese/English)
 - `scripts/start_server.sh`
   Model server launcher
 - `scripts/start_gui.sh`
@@ -114,3 +126,13 @@ http://127.0.0.1:8010/?lang=ja
 - This tester does not control your current Safari or Brave session.
 - Some interactions like right-click and tab handling are still imperfect.
 - History files are stored locally under `inference/htmls/gui/`.
+
+## Support
+
+If you find this project useful, consider supporting the development:
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/sawac" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" >
+  </a>
+</p>

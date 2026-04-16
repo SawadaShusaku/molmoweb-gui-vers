@@ -1,4 +1,4 @@
-# MolmoWeb Tester
+# MolmoWeb GUI Ver.S
 
 macOS 向けの MolmoWeb ローカルテスターです。
 
@@ -13,10 +13,11 @@ macOS 向けの MolmoWeb ローカルテスターです。
 - [GUI の使い方](#gui-の使い方)
 - [主なファイル構成](#主なファイル構成)
 - [注意点](#注意点)
+- [サポート](#サポート)
 
 ## 概要
 
-MolmoWeb Tester は、MolmoWeb のモデルサーバーに対してローカル GUI を重ね、次のような確認をしやすくするためのリポジトリです。
+MolmoWeb GUI Ver.S は、MolmoWeb のモデルサーバーに対してローカル GUI を重ね、次のような確認をしやすくするためのリポジトリです。
 
 - 自然言語タスクの送信
 - 現在の実行状況の確認
@@ -34,6 +35,8 @@ MolmoWeb Tester は、MolmoWeb のモデルサーバーに対してローカル 
 - 日本語 / 英語切り替え
 - Chromium の横幅・高さの指定
 - 非 CUDA 環境向けの `mps` / CPU フォールバック
+- 強制停止ボタン
+- プログレスバーによる進捗表示
 
 ## 対応プラットフォーム
 
@@ -92,6 +95,7 @@ http://127.0.0.1:8010/?lang=ja
 5. 右側で現在の実行状況と実行ステップを確認します。
 6. `履歴` から過去の実行結果を確認します。
 7. 新しい Chromium セッションにしたい場合は `セッションをリセット` を使います。
+8. 実行中のタスクを中断したい場合は `強制停止` を使います。
 
 ## 主なファイル構成
 
@@ -100,7 +104,15 @@ http://127.0.0.1:8010/?lang=ja
 - `inference/client.py`
   MolmoWeb クライアントとブラウザセッション管理
 - `inference/gui_app.py`
-  ローカルテスター GUI
+  ローカルテスター GUI (FastAPI + Jinja2)
+- `inference/templates/gui.html`
+  GUI HTML テンプレート
+- `inference/static/css/gui.css`
+  GUI スタイルシート
+- `inference/static/js/gui.js`
+  GUI JavaScript
+- `inference/texts.json`
+  多言語テキスト定義 (日本語/英語)
 - `scripts/start_server.sh`
   モデルサーバー起動スクリプト
 - `scripts/start_gui.sh`
@@ -114,3 +126,13 @@ http://127.0.0.1:8010/?lang=ja
 - 既存の Safari や Brave のセッションを直接操作するものではありません。
 - 右クリックやタブ操作など、一部挙動はまだ改善余地があります。
 - 履歴ファイルは `inference/htmls/gui/` 配下に保存されます。
+
+## サポート
+
+このプロジェクトが役に立った場合は、開発のサポートをご検討ください：
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/sawac" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" >
+  </a>
+</p>
